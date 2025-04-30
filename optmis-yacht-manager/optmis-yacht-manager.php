@@ -27,13 +27,22 @@ spl_autoload_register(function ($class) {
 
     if (file_exists($file)) {
         require $file;
+        error_log("✅ Autoloaded class: $class");
+    } else {
+        error_log("❌ Could not find file for class: $class");
     }
 });
 
 // Bootstrap the Plugin
 function optmis_yacht_manager_init() {
+    error_log('✅ optmis_yacht_manager_init() fired.');
+
     if (class_exists('Optmis_Yacht_Manager\\Core\\Init')) {
+        error_log('✅ Optmis_Yacht_Manager\\Core\\Init class exists.');
         Optmis_Yacht_Manager\Core\Init::run();
+    } else {
+        error_log('❌ Optmis_Yacht_Manager\\Core\\Init class not found.');
     }
 }
+
 add_action('plugins_loaded', 'optmis_yacht_manager_init');

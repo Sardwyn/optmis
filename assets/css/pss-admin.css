@@ -1,0 +1,162 @@
+/* pss-admin.css */
+
+/* General table appearance */
+.pss-product-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+.pss-product-table th, 
+.pss-product-table td {
+  padding: 8px 10px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+
+.pss-product-table thead {
+  background-color: #f1f1f1;
+}
+
+/* Status indicator (traffic lights) */
+.pss-product-status {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  margin: 0 auto;
+}
+
+.pss-status-green {
+  background-color: #28a745;
+}
+
+.pss-status-amber {
+  background-color: #ffc107;
+}
+
+.pss-status-red {
+  background-color: #dc3545;
+}
+
+/* Category manager layout */
+#pss-supplier-url-wrapper {
+  margin-bottom: 15px;
+}
+
+#pss-saved-categories div {
+  margin-top: 5px;
+}
+
+/* Failed imports box */
+#pss-failed-imports {
+  display: none;
+  margin-top: 20px;
+  background: #fff3cd;
+  border: 1px solid #ffeeba;
+  padding: 15px;
+  border-radius: 6px;
+}
+
+#pss-failed-imports h3 {
+  margin-top: 0;
+  color: #856404;
+}
+
+#pss-failed-imports ul {
+  padding-left: 20px;
+  margin: 10px 0;
+}
+
+#pss-failed-imports li {
+  margin-bottom: 6px;
+}
+
+/* Toasts (injected via JS) */
+.pss-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: #333;
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: bold;
+  z-index: 9999;
+  opacity: 0.95;
+}
+
+/* Scrape button alignment */
+.pss-scrape-saved {
+  margin-left: 10px;
+}
+
+.pss-import-checkbox {
+  margin: 0 auto;
+  display: block;
+}
+
+/* Toast notifications */
+.pss-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: bold;
+  z-index: 9999;
+  opacity: 0.95;
+  transition: opacity 0.3s ease;
+}
+
+.pss-toast--success {
+  background-color: #28a745;
+  color: #fff;
+}
+
+.pss-toast--error {
+  background-color: #dc3545;
+  color: #fff;
+}
+
+.json-explorer {
+  font-family: monospace;
+  background: #f9f9f9;
+  border: 1px solid #ddd;
+  padding: 6px;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.pss-checkbox-cell {
+  width: 30px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.pss-checkbox-cell input[type="checkbox"] {
+  margin: 0;
+  vertical-align: middle;
+}
+
+.pss-icon-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  width: 28px;
+  margin-left: 10px;
+}
+
+.pss-icon-button .dashicons {
+  font-size: 18px;
+  line-height: 1;
+}
+
+
+
+

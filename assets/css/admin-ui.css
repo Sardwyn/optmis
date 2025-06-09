@@ -1,0 +1,18 @@
+/* Admin UI Enhancements */
+#pss-scraped-output table th, #pss-scraped-output table td {
+  vertical-align: top;
+}
+#pss-scraped-output pre {
+  max-height: 200px;
+  overflow: auto;
+  font-size: 12px;
+  font-family: monospace;
+  background: #f6f8fa;
+  border-left: 3px solid #0073aa;
+  padding: 8px;
+}
+#pss-admin-preview-wrapper {
+  border-radius: 6px;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}

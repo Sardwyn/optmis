@@ -32,15 +32,30 @@ jQuery(document).ready(function ($) {
   <div style="margin-top:15px;">
     <button id="pss-run-browser-scraper" class="button button-primary">Scrape Products</button>
     <button id="pss-import-selected" class="button button-secondary" style="margin-left:15px; display:none;">Import Selected Products</button>
+    <button id="pss-cancel-import" class="button button-secondary" style="margin-left:5px; display:none;">Cancel Import</button>
   </div>
-  <div style="margin-top:20px;">
-    <button id="pss-cancel-import" class="button button-secondary" style="margin-left:10px; display:none;">Cancel Import</button>
-    </div>
 
   <pre id="pss-log-console" style="margin-top:20px; max-height:200px; overflow:auto; background:#f8f9fa; padding:10px; border:1px solid #ccc;"></pre>
   <div id="pss-scraped-output" style="margin-top:20px;"></div>
   <div id="pss-failed-imports" style="margin-top:20px; display:none;"></div>
 `);
+
+  // Admin console container (Phase 1)
+  $('#pss-ui-root').after(`
+    <div id="pss-admin-console-container" style="height:200px; overflow-y:auto; background:#f0f0f0; padding:10px; margin-top:10px; border:1px solid #ccc;">
+      <div id="pss-admin-console"></div>
+    </div>
+  `);
+
+  function resetImportUI() {
+  $('#pss-import-selected, #pss-save-modifier, #pss-run-browser-scraper').prop('disabled', false);
+  $('#pss-cancel-import').hide().prop('disabled', true);
+}
+
+function getSavedCategories() {
+  return JSON.parse(localStorage.getItem('pss_saved_categories') || '{}');
+}
+
 
   //Supplier Markup Button Functions
   function getSupplierMarkupMap() {
@@ -67,7 +82,6 @@ jQuery(document).ready(function ($) {
     renderSavedCategories(supplier);
   });
 
-
   $('#pss-price-modifier').on('input', function () {
     const supplier = $('#pss-supplier-select').val();
     const val = parseFloat(this.value) || 0;
@@ -93,6 +107,36 @@ jQuery(document).ready(function ($) {
     setTimeout(() => $toast.fadeOut(400, () => $toast.remove()), 3000);
   }
 
+  // Admin console logger (Phase 1)
+  function logToAdmin(msg, level = 'info') {
+    const color = level === 'error' ? 'red' : level === 'warn' ? 'orange' : 'black';
+    const $line = $(`<div style="color:${color}; margin:2px 0;">${msg}</div>`);
+    $('#pss-admin-console').append($line);
+    // auto-scroll
+    const $ctr = $('#pss-admin-console-container');
+    $ctr.scrollTop($ctr[0].scrollHeight);
+  }
+
+  // Monkey-patch console so everything goes through logToAdmin()
+(function(){
+  const _log  = console.log,
+        _warn = console.warn,
+        _err  = console.error;
+
+  console.log = function(...args) {
+    logToAdmin(args.join(' '), 'info');
+    _log.apply(console, args);
+  };
+  console.warn = function(...args) {
+    logToAdmin(args.join(' '), 'warn');
+    _warn.apply(console, args);
+  };
+  console.error = function(...args) {
+    logToAdmin(args.join(' '), 'error');
+    _err.apply(console, args);
+  };
+})();
+
   // Populate supplier dropdown
   const supplierOptions = window.pssScraperData.suppliers || [];
   supplierOptions.forEach(option => {
@@ -108,10 +152,10 @@ jQuery(document).ready(function ($) {
     $('#pss-price-modifier').val(typeof savedModifier !== 'undefined' ? savedModifier : 0);
   });
 
-  setTimeout(() => {
-    const supplier = $('#pss-supplier-select').val();
-    if (supplier) renderSavedCategories(supplier);
-  }, 250);
+  //setTimeout(() => {
+    //const supplier = $('#pss-supplier-select').val();
+    //if (supplier) renderSavedCategories(supplier);
+  //, 250);
 
   setTimeout(() => {
     const supplier = $('#pss-supplier-select').val();
@@ -125,96 +169,132 @@ jQuery(document).ready(function ($) {
     }
   }, 250);
 
-  function getSavedCategories() {
-    return JSON.parse(localStorage.getItem('pss_saved_categories') || '{}');
-  }
-
   function saveCategory(supplier, name, url) {
-    const data = getSavedCategories(); // localStorage
-    data[supplier] = data[supplier] || [];
-    data[supplier].push({ name, url });
-    localStorage.setItem('pss_saved_categories', JSON.stringify(data));
+  const data = getSavedCategories();
+  data[supplier] = data[supplier] || [];
 
-    $.post(pssScraperData.ajaxUrl, {
-      action: 'pss_save_scraper_category',
-      supplier: supplier,
-      name: name,
-      url: url,
-      security: pssScraperData.security
-    }, function (response) {
-      if (response.success) {
-        console.log('✅ Saved category to DB for mapper.');
-      } else {
-        console.warn('❌ DB save failed:', response);
-      }
-    });
+  const normalizedUrl = url.trim().toLowerCase().replace(/\/+$/, '');
+
+  // 🛑 Prevent duplicates based on normalized URL
+  const alreadyExists = data[supplier].some(cat => {
+    const catUrl = (cat.url || '').trim().toLowerCase().replace(/\/+$/, '');
+    return catUrl === normalizedUrl;
+  });
+
+  if (alreadyExists) {
+    showToast('⚠️ This category is already saved.', false);
+    return;
   }
+
+  data[supplier].push({ name, url: normalizedUrl });
+  localStorage.setItem('pss_saved_categories', JSON.stringify(data));
+
+  $.post(pssScraperData.ajaxUrl, {
+    action: 'pss_save_scraper_category',
+    supplier,
+    name,
+    url,
+    security: pssScraperData.security
+  }, function (response) {
+    if (response.success) {
+      console.log('✅ Saved category to DB for mapper.');
+    } else {
+      console.warn('❌ DB save failed:', response);
+    }
+  });
+
+  showToast('✅ Category saved.', true);
+}
+
+
+
+
 
   function renderSavedCategories(supplier) {
-    const $container = $('#pss-saved-categories').empty();
-    const categories = getSavedCategories()[supplier] || [];
-    const wooCategoryBindings = JSON.parse(localStorage.getItem('pss_category_bindings') || '{}');
+  const $container = $('#pss-saved-categories').empty();
+  $container.empty(); // ✅ clear visual duplicates always
+  const raw = getSavedCategories()[supplier] || [];
 
-    if (!categories.length) {
-      $container.append('<p style="color:#888;">No saved categories.</p>');
-      return;
+  // ✅ Normalize and deduplicate
+  const seen = new Set();
+  const categories = [];
+
+  raw.forEach(cat => {
+    const normalizedUrl = (cat.url || '').trim().toLowerCase().replace(/\/+$/, '');
+    if (!seen.has(normalizedUrl)) {
+      seen.add(normalizedUrl);
+      categories.push({ ...cat, url: normalizedUrl }); // normalized version
     }
+  });
 
-    fetch(pssScraperData.ajaxUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ action: 'pss_get_wc_categories', security: pssScraperData.security }),
-    })
-      .then(res => res.json())
-      .then(result => {
-        if (!result.success || !Array.isArray(result.data)) {
-          throw new Error('Invalid Woo category response');
-        }
-        const wooCats = result.data;
+  // ✅ Clean localStorage to reflect deduped categories
+  const fullData = getSavedCategories();
+  fullData[supplier] = categories;
+  localStorage.setItem('pss_saved_categories', JSON.stringify(fullData));
 
-        categories.forEach(cat => {
-          const categoryKey = new URL(cat.url).pathname;
-          const savedWooId = wooCategoryBindings[categoryKey] || '';
-          const $select = $( '<select style="margin-left:10px;"></select>' );
+  const wooCategoryBindings = JSON.parse(localStorage.getItem('pss_category_bindings') || '{}');
 
-          wooCats.forEach(wc => {
-            const selected = wc.id == savedWooId ? 'selected' : '';
-            $select.append(`<option value="${wc.id}" ${selected}>${wc.name}</option>`);
-          });
-
-          const $saveBtn = $('<button class="button" style="margin-left:10px;">Save Mapping</button>');
-          $saveBtn.on('click', () => {
-            const id = parseInt($select.val(), 10);
-            wooCategoryBindings[categoryKey] = id;
-            localStorage.setItem('pss_category_bindings', JSON.stringify(wooCategoryBindings));
-            showToast(`✅ Bound "${cat.name}" to Woo category ID ${id}`, true);
-          });
-
-          const $scrapeBtn = $( '<button class="button" style="margin-left:10px;">Scrape</button>' )
-            .addClass('pss-scrape-saved')
-            .attr('data-url', cat.url)
-            .attr('data-category', categoryKey)
-            .attr('data-woo-id', savedWooId);
-
-          const $deleteBtn = $(
-            '<button class="button button-link-delete pss-delete-category" data-supplier="' + supplier + '" data-url="' + cat.url + '" title="Delete Category" style="margin-left:10px;">' +
-            '<span class="dashicons dashicons-trash"></span>' +
-            '</button>'
-          );
-
-          const $row = $( '<div style="display:flex; align-items:center; margin-bottom:10px;"></div>' );
-          $row.append(`
-            <div style="flex:1;"><strong>${cat.name}</strong> - <a href="${cat.url}" target="_blank" style="text-decoration:underline;">${cat.url}</a></div>
-          `);
-          $row.append($select, $saveBtn, $scrapeBtn, $deleteBtn);
-          $container.append($row);
-        });
-      })
-      .catch(err => {
-        console.error('❌ Failed to load Woo categories:', err);
-        $container.append('<p style="color:#d00;">Could not load WooCommerce categories.</p>');
-      });
+  if (!categories.length) {
+    $container.append('<p style="color:#888;">No saved categories.</p>');
+    return;
   }
+
+  fetch(pssScraperData.ajaxUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ action: 'pss_get_wc_categories', security: pssScraperData.security }),
+  })
+    .then(res => res.json())
+    .then(result => {
+      if (!result.success || !Array.isArray(result.data)) {
+        throw new Error('Invalid Woo category response');
+      }
+      const wooCats = result.data;
+
+      categories.forEach(cat => {
+        const categoryKey = new URL(cat.url).pathname;
+        const savedWooId = wooCategoryBindings[categoryKey] || '';
+        const $select = $('<select style="margin-left:10px;"></select>');
+
+        wooCats.forEach(wc => {
+          const selected = wc.id == savedWooId ? 'selected' : '';
+          $select.append(`<option value="${wc.id}" ${selected}>${wc.name}</option>`);
+        });
+
+        const $saveBtn = $('<button class="button" style="margin-left:10px;">Save Mapping</button>');
+        $saveBtn.on('click', () => {
+          const id = parseInt($select.val(), 10);
+          wooCategoryBindings[categoryKey] = id;
+          localStorage.setItem('pss_category_bindings', JSON.stringify(wooCategoryBindings));
+          showToast(`✅ Bound "${cat.name}" to Woo category ID ${id}`, true);
+        });
+
+        const $scrapeBtn = $('<button class="button" style="margin-left:10px;">Scrape</button>')
+          .addClass('pss-scrape-saved')
+          .attr('data-url', cat.url)
+          .attr('data-category', categoryKey)
+          .attr('data-woo-id', savedWooId);
+
+        const $deleteBtn = $('<button class="button button-link-delete pss-delete-category" style="margin-left:10px;" title="Delete Category">')
+          .attr('data-supplier', supplier)
+          .attr('data-url', cat.url)
+          .html('<span class="dashicons dashicons-trash"></span>');
+
+        const $row = $('<div style="display:flex; align-items:center; margin-bottom:10px;"></div>');
+        $row.append(`
+          <div style="flex:1;"><strong>${cat.name}</strong> - <a href="${cat.url}" target="_blank" style="text-decoration:underline;">${cat.url}</a></div>
+        `);
+        $row.append($select, $saveBtn, $scrapeBtn, $deleteBtn);
+        $container.append($row);
+      });
+    })
+    .catch(err => {
+      console.error('❌ Failed to load Woo categories:', err);
+      $container.append('<p style="color:#d00;">Could not load WooCommerce categories.</p>');
+    });
+}
+
+
 
   $('#pss-save-category').on('click', function () {
     const supplier = $('#pss-supplier-select').val();
@@ -351,20 +431,23 @@ function updateProgressBar(current, total) {
   $('#pss-import-progress').val(pct);
   $('#pss-import-progress-text').text(` ${pct}% (batch ${current}/${total})`);
 }
+
 function processChunk(idx, chunks, supplierSlug, modifier) {
   if (idx >= chunks.length) {
     showToast('✅ All batches imported!', true);
     $('#pss-log-console').append(
       `\n✅ Imported ${chunks.flat().length} products in ${chunks.length} batches.`
     );
-    return;
+    return $.Deferred().resolve().promise(); // ✅ Return resolved promise for completion
   }
+
   const batch = chunks[idx];
   updateProgressBar(idx + 1, chunks.length);
   $('#pss-log-console').append(
     `\n🚀 Importing batch ${idx + 1}/${chunks.length} (${batch.length} items)...`
   );
-  $.ajax({
+
+  return $.ajax({
     url: pssScraperData.ajaxUrl,
     method: 'POST',
     data: {
@@ -374,116 +457,93 @@ function processChunk(idx, chunks, supplierSlug, modifier) {
       supplier: supplierSlug,
       markup:   modifier.toString()
     }
-  }).done(function () {
+  })
+  .done(function () {
     $('#pss-log-console').append(`\n✅ Batch ${idx + 1} done.`);
-    processChunk(idx + 1, chunks, supplierSlug, modifier);
-  }).fail(function () {
+  })
+  .fail(function () {
     $('#pss-log-console').append(`\n❌ Batch ${idx + 1} failed.`);
     showToast(`❌ Import failed on batch ${idx + 1}`, false);
+  })
+  .always(() => {
+    // Trigger next batch regardless of success/failure
+    processChunk(idx + 1, chunks, supplierSlug, modifier);
   });
 }
 
 
 
+// ─── Phase 2: Parallel Batch Runner ─────────────────────────────────
+const MAX_CONCURRENT = 3;
 
-    // ─── Cancel & Retry Helpers ───────────────────────────────────────────────
-  let cancelImport = false;
-  const MAX_RETRIES = 2;
-
-  function resetImportUI() {
-    $('#pss-import-selected, #pss-save-modifier, #pss-run-browser-scraper').prop('disabled', false);
-    $('#pss-cancel-import').hide();
-  }
-
-  // Wire up the Cancel button
-  $('#pss-cancel-import').off('click').on('click', function() {
-    cancelImport = true;
-    showToast('🚫 Import will stop after the current batch.', false);
+function importBatchesInParallel(chunks, supplierSlug, rawModifier) {
+  let inFlight = 0, nextIndex = 0;
+  return new Promise(resolve => {
+    function launchNext() {
+      // If all batches started and none in flight, we’re done
+      if (nextIndex >= chunks.length && inFlight === 0) {
+        return resolve();
+      }
+      // While we can, fire off the next batch
+      while (inFlight < MAX_CONCURRENT && nextIndex < chunks.length) {
+        const batchIdx = nextIndex++;
+        inFlight++;
+        // processChunk must return the jqXHR
+        processChunk(batchIdx, chunks, supplierSlug, rawModifier)
+          .always(() => {
+            inFlight--;
+            launchNext();
+          });
+      }
+    }
+    launchNext();
   });
+}
 
-  // Modify processChunk to honor cancelImport and retry logic
-  function processChunk(idx, chunks, supplierSlug, modifier, attempt = 0) {
-    if (cancelImport) {
-      showToast('❌ Import cancelled.', false);
-      resetImportUI();
-      return;
-    }
-    if (idx >= chunks.length) {
-      showToast('✅ All batches imported!', true);
-      resetImportUI();
-      return;
-    }
-    const batch = chunks[idx];
-    updateProgressBar(idx + 1, chunks.length);
-    $('#pss-log-console').append(`\n🚀 Importing batch ${idx + 1}/${chunks.length} (${batch.length} items)...`);
 
-    $.ajax({
-      url: pssScraperData.ajaxUrl,
-      method: 'POST',
-      data: {
-        action:   'pss_import_products',
-        security: pssScraperData.security,
-        products: JSON.stringify(batch),
-        supplier: supplierSlug,
-        markup:   modifier.toString()
-      }
-    })
-    .done(() => {
-      $('#pss-log-console').append(`\n✅ Batch ${idx + 1} done.`);
-      processChunk(idx + 1, chunks, supplierSlug, modifier, 0);
-    })
-    .fail(() => {
-      if (attempt < MAX_RETRIES) {
-        console.warn(`Retrying batch ${idx + 1}, attempt ${attempt + 1}`);
-        processChunk(idx, chunks, supplierSlug, modifier, attempt + 1);
-      } else {
-        $('#pss-log-console').append(`\n❌ Batch ${idx + 1} failed permanently.`);
-        processChunk(idx + 1, chunks, supplierSlug, modifier, 0);
-      }
-    });
-  }
-
-  // ─── Override Import Button to Hook in Batching ─────────────────────────────
+  // Import Selected Products override (batched, cancel & retry)
   $('#pss-import-selected').off('click').on('click', function () {
-    cancelImport = false;
-    $('#pss-import-selected, #pss-save-modifier, #pss-run-browser-scraper').prop('disabled', true);
-    $('#pss-cancel-import').show().prop('disabled', false);
+  cancelImport = false;
+  $('#pss-import-selected,#pss-save-modifier,#pss-run-browser-scraper').prop('disabled', true);
+  $('#pss-cancel-import').show().prop('disabled', false);
 
-    const selected = [];
-    $('.pss-product-table input[type="checkbox"]:checked').each(function () {
-      const idx = $(this).closest('tr').index();
-      const p = window.lastScrapedProducts[idx];
-      if (p) selected.push(p);
-    });
-
-    const supplierSlug = $('#pss-supplier-select').val();
-    const rawModifier  = parseFloat($('#pss-price-modifier').val()) || 0;
-    if (!selected.length) {
-      alert('No products selected for import.');
-      resetImportUI();
-      return;
-    }
-
-    // Persist modifier
-    const map = JSON.parse(localStorage.getItem('pss_supplier_markup') || '{}');
-    map[supplierSlug] = rawModifier;
-    localStorage.setItem('pss_supplier_markup', JSON.stringify(map));
-
-    // Apply markup
-    selected.forEach(p => {
-      p.supplier = supplierSlug;
-      const price = parseFloat(p.price.toString().replace(/[^\d.]/g, ''));
-      if (!isNaN(price) && rawModifier) {
-        p.price = (price * (1 + rawModifier / 100)).toFixed(2);
-      }
-    });
-
-    $('#pss-log-console').append('\n🚀 Starting batched import...');
-    const chunks = chunkArray(selected, BATCH_SIZE);
-    processChunk(0, chunks, supplierSlug, rawModifier);
+  const selected = [];
+  $('.pss-product-table input[type="checkbox"]:checked').each(function () {
+    const idx = $(this).closest('tr').index();
+    const p   = window.lastScrapedProducts[idx];
+    if (p) selected.push(p);
   });
 
+  const supplierSlug = $('#pss-supplier-select').val();
+  const rawModifier  = parseFloat($('#pss-price-modifier').val()) || 0;
 
+  if (!selected.length) {
+    alert('No products selected for import.');
+    resetImportUI();
+    return;
+  }
+
+  const map = JSON.parse(localStorage.getItem('pss_supplier_markup') || '{}');
+  map[supplierSlug] = rawModifier;
+  localStorage.setItem('pss_supplier_markup', JSON.stringify(map));
+
+  selected.forEach(p => {
+    p.supplier = supplierSlug;
+    const price = parseFloat(p.price.toString().replace(/[^\d.]/g, ''));
+    if (!isNaN(price) && rawModifier) {
+      p.price = (price * (1 + rawModifier / 100)).toFixed(2);
+    }
+  });
+
+  const chunks = chunkArray(selected, BATCH_SIZE);
+  importBatchesInParallel(chunks, supplierSlug, rawModifier)
+    .then(() => {
+      showToast('✅ All batches imported in parallel!', true);
+      logToAdmin('Parallel import complete', 'info');
+      resetImportUI();
+    });
 });
 
 
+
+});

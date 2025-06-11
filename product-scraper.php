@@ -230,129 +230,133 @@ add_action('wp_ajax_pss_delete_scraper_category', function() {
 
 add_action( 'admin_init', function() {
 
+    // Handle saving the Category Mapper JSON
+    if ( ! empty( $_POST['mapping'] ) && current_user_can( 'manage_options' ) ) {
+        $map_path  = WP_CONTENT_DIR . '/uploads/pss-maps/aquafax.json';
+        // 1) Pull in the raw POST and unslash all strings
+        $raw_map   = wp_unslash( $_POST['mapping'] );
 
-
-    if (!empty($_POST['mapping']) && current_user_can('manage_options')) {
-
-        $map_path = WP_CONTENT_DIR . '/uploads/pss-maps/aquafax.json';
-
-        $input = array_map(function($entry) {
-
-            return [
-
-                'index'  => sanitize_text_field($entry['index'] ?? 'production_aquafax'),
-
-                'filter' => sanitize_text_field($entry['filter'] ?? '')
-
+        // 2) Build a new array, with clean keys (no backslashes) + sanitized values
+        $input = [];
+        foreach ( $raw_map as $key => $entry ) {
+            // strip any literal backslashes from the key
+            $clean_key = str_replace( '\\', '', $key );
+            $input[ $clean_key ] = [
+                'index'  => sanitize_text_field( $entry['index']  ?? 'production_aquafax' ),
+                'filter' => sanitize_text_field( $entry['filter'] ?? '' )
             ];
-
-        }, $_POST['mapping']);
-
-
-
-        if (!file_exists(dirname($map_path))) {
-
-            mkdir(dirname($map_path), 0755, true);
-
         }
 
+        // Ensure directory exists
+        if ( ! file_exists( dirname( $map_path ) ) ) {
+            mkdir( dirname( $map_path ), 0755, true );
+        }
 
+        // 3) Now write JSON with truly clean keys
+        file_put_contents(
+            $map_path,
+            json_encode( $input, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES )
+        );
 
-        file_put_contents($map_path, json_encode($input, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-
-        add_action('admin_notices', function() {
-
+        // 4) Show success notice
+        add_action( 'admin_notices', function() {
             echo '<div class="notice notice-success is-dismissible"><p>Category mappings saved.</p></div>';
+        } );
+    } // end if saving mapping
 
-        });
-
-    }
-
-    register_setting( 'pss_settings_group', 'pss_openai_api_key',    ['sanitize_callback'=>'sanitize_text_field'] );
-
-    register_setting( 'pss_settings_group', 'pss_debug_mode',       ['sanitize_callback'=>'sanitize_text_field'] );
-
-    register_setting( 'pss_settings_group', 'pss_wc_consumer_key',  ['sanitize_callback'=>'sanitize_text_field'] );
-
-    register_setting( 'pss_settings_group', 'pss_wc_consumer_secret',['sanitize_callback'=>'sanitize_text_field'] );
-
-    register_setting( 'pss_settings_group', 'pss_category_map',     ['sanitize_callback'=>'pss_sanitize_category_map'] );
-
-    register_setting( 'pss_settings_group', 'pss_enable_ai_descriptions', ['sanitize_callback' => 'sanitize_text_field'] );
-
-
+    // Register settings
+    register_setting( 'pss_settings_group', 'pss_openai_api_key',     [ 'sanitize_callback' => 'sanitize_text_field' ] );
+    register_setting( 'pss_settings_group', 'pss_debug_mode',        [ 'sanitize_callback' => 'sanitize_text_field' ] );
+    register_setting( 'pss_settings_group', 'pss_wc_consumer_key',   [ 'sanitize_callback' => 'sanitize_text_field' ] );
+    register_setting( 'pss_settings_group', 'pss_wc_consumer_secret',[ 'sanitize_callback' => 'sanitize_text_field' ] );
+    register_setting( 'pss_settings_group', 'pss_category_map',      [ 'sanitize_callback' => 'pss_sanitize_category_map' ] );
+    register_setting( 'pss_settings_group', 'pss_enable_ai_descriptions', [ 'sanitize_callback' => 'sanitize_text_field' ] );
 
     // Enable AI Descriptions
-
-    add_settings_field( 'pss_enable_ai_descriptions', 'Enable AI Descriptions', function() {
-
-    $val = get_option('pss_enable_ai_descriptions', 'no');
-
-    echo '<input type="checkbox" name="pss_enable_ai_descriptions" value="yes" ' . checked($val, 'yes', false) . '> Enable GPT-4 generated descriptions';
-
-}, 'pss-settings', 'pss_settings_section' );
-
-
+    add_settings_field(
+        'pss_enable_ai_descriptions',
+        'Enable AI Descriptions',
+        function() {
+            $val = get_option( 'pss_enable_ai_descriptions', 'no' );
+            echo '<input type="checkbox" name="pss_enable_ai_descriptions" value="yes" ' 
+                 . checked( $val, 'yes', false ) 
+                 . '> Enable GPT-4 generated descriptions';
+        },
+        'pss-settings',
+        'pss_settings_section'
+    );
 
     // AI Integration
+    add_settings_section(
+        'pss_settings_section',
+        'AI Integration',
+        '__return_null',
+        'pss-settings'
+    );
+    add_settings_field(
+        'pss_openai_api_key',
+        'OpenAI API Key',
+        function() {
+            $key = esc_attr( get_option( 'pss_openai_api_key' ) );
+            echo "<input type='text' name='pss_openai_api_key' value='$key' class='regular-text' />";
+            echo "<p class='description'>Used for AI-powered product description generation (GPT-4).</p>";
+        },
+        'pss-settings',
+        'pss_settings_section'
+    );
 
-    add_settings_section( 'pss_settings_section', 'AI Integration', '__return_null', 'pss-settings' );
+    // Debug & Diagnostics
+    add_settings_section(
+        'pss_debug_section',
+        'Debug & Diagnostics',
+        '__return_null',
+        'pss-settings'
+    );
+    add_settings_field(
+        'pss_debug_mode',
+        'Enable Debug Logging',
+        function() {
+            $v = get_option( 'pss_debug_mode', 'no' );
+            echo '<select name="pss_debug_mode">'
+               . '<option value="no" ' . selected( $v, 'no', false ) . '>No</option>'
+               . '<option value="yes" ' . selected( $v, 'yes', false ) . '>Yes</option>'
+               . '</select>';
+            echo "<p class='description'>Logs WooCommerce import payloads and REST responses to PHP error log.</p>";
+        },
+        'pss-settings',
+        'pss_debug_section'
+    );
 
-    add_settings_field( 'pss_openai_api_key', 'OpenAI API Key', function(){
+    // WooCommerce API Credentials
+    add_settings_section(
+        'pss_wc_api_section',
+        'WooCommerce API Credentials',
+        '__return_null',
+        'pss-settings'
+    );
+    add_settings_field(
+        'pss_wc_consumer_key',
+        'Consumer Key',
+        function() {
+            $k = esc_attr( get_option( 'pss_wc_consumer_key' ) );
+            echo "<input type='text' name='pss_wc_consumer_key' value='$k' class='regular-text' />";
+        },
+        'pss-settings',
+        'pss_wc_api_section'
+    );
+    add_settings_field(
+        'pss_wc_consumer_secret',
+        'Consumer Secret',
+        function() {
+            $s = esc_attr( get_option( 'pss_wc_consumer_secret' ) );
+            echo "<input type='password' name='pss_wc_consumer_secret' value='$s' class='regular-text' />";
+        },
+        'pss-settings',
+        'pss_wc_api_section'
+    );
 
-        $key = esc_attr( get_option('pss_openai_api_key') );
+} );
 
-        echo "<input type='text' name='pss_openai_api_key' value='$key' class='regular-text' />";
-
-        echo "<p class='description'>Used for AI-powered product description generation (GPT-4).</p>";
-
-    }, 'pss-settings', 'pss_settings_section' );
-
-
-
-    // Debug
-
-    add_settings_section( 'pss_debug_section', 'Debug & Diagnostics', '__return_null', 'pss-settings' );
-
-    add_settings_field( 'pss_debug_mode', 'Enable Debug Logging', function(){
-
-        $v = get_option('pss_debug_mode','no');
-
-        echo '<select name="pss_debug_mode">'
-
-           . '<option value="no" '.selected($v,'no',false).'>No</option>'
-
-           . '<option value="yes" '.selected($v,'yes',false).'>Yes</option>'
-
-           . '</select>';
-
-        echo "<p class='description'>Logs WooCommerce import payloads and REST responses to PHP error log.</p>";
-
-    }, 'pss-settings', 'pss_debug_section' );
-
-
-
-    // Woo Credentials
-
-    add_settings_section( 'pss_wc_api_section', 'WooCommerce API Credentials', '__return_null', 'pss-settings' );
-
-    add_settings_field( 'pss_wc_consumer_key', 'Consumer Key', function(){
-
-        $k = esc_attr( get_option('pss_wc_consumer_key') );
-
-        echo "<input type='text' name='pss_wc_consumer_key' value='$k' class='regular-text' />";
-
-    }, 'pss-settings', 'pss_wc_api_section' );
-
-    add_settings_field( 'pss_wc_consumer_secret', 'Consumer Secret', function(){
-
-        $s = esc_attr( get_option('pss_wc_consumer_secret') );
-
-        echo "<input type='password' name='pss_wc_consumer_secret' value='$s' class='regular-text' />";
-
-    }, 'pss-settings', 'pss_wc_api_section' );
-
-});
 
 
 
@@ -1894,7 +1898,16 @@ add_action('admin_enqueue_scripts', function ($hook) {
 
 
 
-  wp_localize_script('pss-browser-importer', 'pssScraperData', $data);
+  //wp_localize_script('pss-browser-importer', 'pssScraperData', $data);
+  wp_add_inline_script(
+  'pss-browser-importer',
+
+  // emit a clean JS object without escaping slashes or quotes
+  'window.pssScraperData = ' 
+    . wp_json_encode( $data, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) 
+    . ';',
+  'before'
+);
 
 });
 
@@ -1928,11 +1941,9 @@ function pss_save_scraper_category() {
 
 
 
-    $supplier = sanitize_text_field($_POST['supplier'] ?? '');
-
-    $name     = sanitize_text_field($_POST['name'] ?? '');
-
-    $url      = esc_url_raw($_POST['url'] ?? '');
+    $supplier = sanitize_text_field( wp_unslash( $_POST['supplier'] ?? '' ) );
+    $name     = sanitize_text_field( wp_unslash( $_POST['name']     ?? '' ) );
+    $url      = esc_url_raw(        wp_unslash( $_POST['url']      ?? '' ) );
 
 
 

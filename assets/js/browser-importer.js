@@ -170,41 +170,42 @@ function getSavedCategories() {
   }, 250);
 
   function saveCategory(supplier, name, url) {
-  const data = getSavedCategories();
-  data[supplier] = data[supplier] || [];
-
+  // 1) Normalize & de-slash *before* we send it
+  name = name.replace(/\\+/g, '');
   const normalizedUrl = url.trim().toLowerCase().replace(/\/+$/, '');
 
-  // 🛑 Prevent duplicates based on normalized URL
-  const alreadyExists = data[supplier].some(cat => {
-    const catUrl = (cat.url || '').trim().toLowerCase().replace(/\/+$/, '');
-    return catUrl === normalizedUrl;
-  });
-
-  if (alreadyExists) {
-    showToast('⚠️ This category is already saved.', false);
-    return;
-  }
-
-  data[supplier].push({ name, url: normalizedUrl });
-  localStorage.setItem('pss_saved_categories', JSON.stringify(data));
-
+  // 2) Write *only* to the DB
   $.post(pssScraperData.ajaxUrl, {
-    action: 'pss_save_scraper_category',
+    action:   'pss_save_scraper_category',
     supplier,
     name,
-    url,
+    url: normalizedUrl,
     security: pssScraperData.security
   }, function (response) {
-    if (response.success) {
-      console.log('✅ Saved category to DB for mapper.');
-    } else {
+    if (!response.success) {
       console.warn('❌ DB save failed:', response);
+      showToast('❌ Couldn’t save category.', false);
+      return;
     }
-  });
 
-  showToast('✅ Category saved.', true);
+    // 3) Server returns the clean list for this supplier:
+    //    response.data.saved = [ { name: “…”, url: “…” }, … ]
+    const serverList = response.data.saved.map(cat => ({
+      name: cat.name.replace(/\\+/g, ''),
+      url:  cat.url
+    }));
+
+    // 4) Overwrite localStorage with the *server’s* clean version
+    const all = getSavedCategories();
+    all[supplier] = serverList;
+    localStorage.setItem('pss_saved_categories', JSON.stringify(all));
+
+    // 5) Re-render from that clean store
+    renderSavedCategories(supplier);
+    showToast('✅ Category saved.', true);
+  });
 }
+
 
 
 
